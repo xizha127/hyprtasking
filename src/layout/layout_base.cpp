@@ -127,6 +127,20 @@ uint64_t parse_hex_color(const std::string& raw) {
     return value;
 }
 
+CHyprColor resolve_label_color(
+    const std::string& raw,
+    const CHyprColor& fallback,
+    const CHyprColor& matugen_color,
+    bool use_matugen,
+    const MatugenPalette& palette
+) {
+    if (!raw.empty())
+        return CHyprColor {parse_hex_color(raw)};
+    if (use_matugen && palette.valid)
+        return matugen_color;
+    return fallback;
+}
+
 optional<uint64_t> extract_lua_color_hex(const std::string& text, const std::string& key) {
     const std::regex re(
         key + R"(\s*=\s*["']?(?:rgb|rgba)\(([0-9A-Fa-f]{6,8})\)["']?)"
@@ -305,10 +319,17 @@ void HTLayoutBase::render_workspace_label(
     const std::string font = HTConfig::value<Config::STRING>("labels:font");
     const float pad = 8.f * monitor->m_scale;
     const int max_width = std::max(1, (int)std::floor(box.w - pad * 2.f));
+    const std::string text_color_raw = HTConfig::value<Config::STRING>("labels:text_color");
     std::string text = std::to_string(workspace_id);
     if (workspace != nullptr && !workspace->m_name.empty())
         text = workspace->m_name;
-    CHyprColor text_color = use_matugen && palette.valid ? palette.primary : CHyprColor {1.f, 1.f, 1.f, 1.f};
+    CHyprColor text_color = resolve_label_color(
+        text_color_raw,
+        CHyprColor {1.f, 1.f, 1.f, 1.f},
+        palette.primary,
+        use_matugen,
+        palette
+    );
     text_color = text_color.modifyA(text_color.a * (text_opacity / 100.f));
 
     const auto tex = g_pHyprRenderer->renderText(
@@ -333,11 +354,13 @@ void HTLayoutBase::render_workspace_label(
             std::clamp((int)HTConfig::value<Config::INTEGER>("labels:background_opacity"), 0, 100);
         if (background_opacity > 0) {
             const std::string background_color = HTConfig::value<Config::STRING>("labels:background_color");
-            CHyprColor color = use_matugen && palette.valid
-                ? palette.secondary
-                : (background_color.empty()
-                       ? CHyprColor {HTConfig::value<Config::INTEGER>("bg_color")}.stripA()
-                       : CHyprColor {parse_hex_color(background_color)}.stripA());
+            CHyprColor color = resolve_label_color(
+                background_color,
+                CHyprColor {HTConfig::value<Config::INTEGER>("bg_color")}.stripA(),
+                palette.secondary,
+                use_matugen,
+                palette
+            ).stripA();
             color = color.modifyA(color.a * (background_opacity / 100.f));
 
             CRectPassElement::SRectData rect;
