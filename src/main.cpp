@@ -587,6 +587,7 @@ static void init_config() {
     addConfigValue(CStringValue, "labels:font", "label font", "");
     addConfigValue(CIntValue, "labels:font_size", "label font size", 14);
     addConfigValue(CIntValue, "labels:text_opacity", "label text opacity", 100);
+    addConfigValue(CStringValue, "labels:text_color", "label text color", "");
     addConfigValue(CBoolValue, "labels:background", "label background", 0);
     addConfigValue(CStringValue, "labels:background_color", "label background color", "");
     addConfigValue(CIntValue, "labels:background_opacity", "label background opacity", 100);

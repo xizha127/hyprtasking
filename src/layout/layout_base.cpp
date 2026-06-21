@@ -207,16 +207,15 @@ void HTLayoutBase::render_workspace_label(WORKSPACEID workspace_id, PHLWORKSPACE
         return;
 
     const std::string font = HTConfig::value<Config::STRING>("labels:font");
+    const std::string text_color = HTConfig::value<Config::STRING>("labels:text_color");
+    CHyprColor color = text_color.empty()
+        ? CHyprColor {1.f, 1.f, 1.f, 1.f}
+        : CHyprColor {parse_hex_color(text_color)}.stripA();
+    color = color.modifyA(color.a * (text_opacity / 100.f));
+
     const float pad = 8.f * monitor->m_scale;
     const int max_width = std::max(1, (int)std::floor(box.w - pad * 2.f));
-    const auto tex = g_pHyprRenderer->renderText(
-        text,
-        CHyprColor {1.f, 1.f, 1.f, text_opacity / 100.f},
-        font_size,
-        false,
-        font,
-        max_width
-    );
+    const auto tex = g_pHyprRenderer->renderText(text, color, font_size, false, font, max_width);
     if (tex == nullptr || !tex->ok())
         return;
 

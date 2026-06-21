@@ -158,6 +158,7 @@ hl.config({
         font = "",
         font_size = 14,
         text_opacity = 100,
+        text_color = "",
         background = false,
         background_color = "",
         background_opacity = 100,
@@ -240,6 +241,7 @@ plugin {
             font = ""
             font_size = 14
             text_opacity = 100
+            text_color = ""
             background = false
             background_color = ""
             background_opacity = 100
@@ -342,6 +344,7 @@ All options should are prefixed with `plugin:hyprtasking:`.
 | `labels:font` | `string` | Font family passed to Hyprland's text renderer | `""` |
 | `labels:font_size` | `int` | Label font size in points | `14` |
 | `labels:text_opacity` | `int` | Label text opacity from `0` to `100` | `100` |
+| `labels:text_color` | `string` | Hex color for the label text | `""` |
 | `labels:background` | `bool` | Whether to draw a rounded background behind the label | `false` |
 | `labels:background_color` | `string` | Hex color for the label background | `""` |
 | `labels:background_opacity` | `int` | Background opacity from `0` to `100` | `100` |
