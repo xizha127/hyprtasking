@@ -590,7 +590,7 @@ static void init_config() {
     addConfigValue(CBoolValue, "labels:background", "label background", 0);
     addConfigValue(CStringValue, "labels:background_color", "label background color", "");
     addConfigValue(CIntValue, "labels:background_opacity", "label background opacity", 100);
-    addConfigValue(CBoolValue, "labels:mutagen", "label uses workspace name when available", 1);
+    addConfigValue(CBoolValue, "labels:matugen", "use matugen colors for labels", 1);
 
     //linear specific
     addConfigValue(CIntValue, "linear:blur", "blur", 1);

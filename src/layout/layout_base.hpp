@@ -16,6 +16,12 @@ enum HTViewStage {
     HT_VIEW_CLOSED,
 };
 
+struct MatugenPalette {
+    CHyprColor primary;
+    CHyprColor secondary;
+    bool       valid = false;
+};
+
 class HTLayoutBase {
   protected:
     // Same as monitor_id of the parent view
@@ -81,6 +87,12 @@ class HTLayoutBase {
     // Render the overview
     virtual void render();
     void render_workspace_label(WORKSPACEID workspace_id, PHLWORKSPACE workspace, const CBox& box);
+    void render_workspace_label(
+        WORKSPACEID workspace_id,
+        PHLWORKSPACE workspace,
+        const CBox& box,
+        const MatugenPalette& palette
+    );
 
     // Per-workspace framebuffers, keyed by workspace id. Populated by
     // render_to_fbs(), consumed by render().

@@ -1,8 +1,14 @@
 #include <any>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <regex>
 #include <sstream>
+#include <vector>
 
 #define private public
 #include <hyprland/src/config/ConfigManager.hpp>
@@ -22,6 +28,8 @@
 #include "layout_base.hpp"
 
 namespace {
+using std::optional;
+
 enum class LabelPos {
     TopLeft,
     Top,
@@ -118,6 +126,85 @@ uint64_t parse_hex_color(const std::string& raw) {
         value |= 0xFF000000ULL;
     return value;
 }
+
+optional<uint64_t> extract_lua_color_hex(const std::string& text, const std::string& key) {
+    const std::regex re(
+        key + R"(\s*=\s*["']?(?:rgb|rgba)\(([0-9A-Fa-f]{6,8})\)["']?)"
+    );
+    std::smatch match;
+    if (!std::regex_search(text, match, re) || match.size() < 2)
+        return std::nullopt;
+
+    std::string hex = match[1].str();
+    if (hex.size() == 6)
+        hex += "FF";
+
+    try {
+        return std::stoull(hex, nullptr, 16);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+optional<MatugenPalette> load_matugen_palette_from_file(const std::filesystem::path& path) {
+    std::ifstream file(path);
+    if (!file.is_open())
+        return std::nullopt;
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    const std::string text = buffer.str();
+
+    const auto primary_hex = extract_lua_color_hex(text, "active_border")
+        .or_else([&]() { return extract_lua_color_hex(text, "primary"); });
+    const auto secondary_hex = extract_lua_color_hex(text, "inactive_border")
+        .or_else([&]() { return extract_lua_color_hex(text, "secondary"); });
+
+    if (!primary_hex.has_value())
+        return std::nullopt;
+
+    MatugenPalette palette;
+    palette.primary = CHyprColor {*primary_hex};
+    palette.secondary = secondary_hex.has_value() ? CHyprColor {*secondary_hex} : palette.primary;
+    palette.valid = true;
+    return palette;
+}
+
+optional<MatugenPalette> load_matugen_palette() {
+    static std::filesystem::file_time_type cached_mtime {};
+    static std::filesystem::path cached_path {};
+    static optional<MatugenPalette> cached_palette;
+
+    const char* xdg = std::getenv("XDG_CONFIG_HOME");
+    const char* home = std::getenv("HOME");
+    const std::filesystem::path base = xdg != nullptr
+        ? std::filesystem::path {xdg}
+        : (home != nullptr ? std::filesystem::path {home} / ".config" : std::filesystem::path {});
+
+    const std::vector<std::filesystem::path> candidates = {
+        base / "hypr" / "dms" / "colors.lua",
+        base / "hypr" / "hyprland" / "colors.lua",
+        base / "hypr" / "colors.lua",
+    };
+
+    for (const auto& path : candidates) {
+        std::error_code ec;
+        if (!std::filesystem::exists(path, ec))
+            continue;
+
+        const auto mtime = std::filesystem::last_write_time(path, ec);
+        if (!cached_palette.has_value() || path != cached_path || mtime != cached_mtime) {
+            cached_palette = load_matugen_palette_from_file(path);
+            cached_path = path;
+            cached_mtime = mtime;
+        }
+        return cached_palette;
+    }
+
+    cached_palette.reset();
+    cached_path.clear();
+    return std::nullopt;
+}
 } // namespace
 
 HTLayoutBase::HTLayoutBase(VIEWID new_view_id) : view_id(new_view_id) {
@@ -186,20 +273,29 @@ void HTLayoutBase::render() {
 }
 
 void HTLayoutBase::render_workspace_label(WORKSPACEID workspace_id, PHLWORKSPACE workspace, const CBox& box) {
+    const auto palette = load_matugen_palette();
+    if (palette.has_value())
+        render_workspace_label(workspace_id, workspace, box, *palette);
+    else
+        render_workspace_label(workspace_id, workspace, box, MatugenPalette {});
+}
+
+void HTLayoutBase::render_workspace_label(
+    WORKSPACEID workspace_id,
+    PHLWORKSPACE workspace,
+    const CBox& box,
+    const MatugenPalette& palette
+) {
     if (!HTConfig::value<Config::BOOL>("labels:display_label"))
         return;
     if (box.w < 1.f || box.h < 1.f)
         return;
 
-    const bool use_name = HTConfig::value<Config::BOOL>("labels:mutagen");
-    std::string text = std::to_string(workspace_id);
-    if (use_name && workspace != nullptr && !workspace->m_name.empty())
-        text = workspace->m_name;
-
     const PHLMONITOR monitor = get_monitor();
     if (monitor == nullptr)
         return;
 
+    const bool use_matugen = HTConfig::value<Config::BOOL>("labels:matugen");
     const int font_size = HTConfig::value<Config::INTEGER>("labels:font_size");
     const int text_opacity =
         std::clamp((int)HTConfig::value<Config::INTEGER>("labels:text_opacity"), 0, 100);
@@ -209,9 +305,15 @@ void HTLayoutBase::render_workspace_label(WORKSPACEID workspace_id, PHLWORKSPACE
     const std::string font = HTConfig::value<Config::STRING>("labels:font");
     const float pad = 8.f * monitor->m_scale;
     const int max_width = std::max(1, (int)std::floor(box.w - pad * 2.f));
+    std::string text = std::to_string(workspace_id);
+    if (workspace != nullptr && !workspace->m_name.empty())
+        text = workspace->m_name;
+    CHyprColor text_color = use_matugen && palette.valid ? palette.primary : CHyprColor {1.f, 1.f, 1.f, 1.f};
+    text_color = text_color.modifyA(text_color.a * (text_opacity / 100.f));
+
     const auto tex = g_pHyprRenderer->renderText(
         text,
-        CHyprColor {1.f, 1.f, 1.f, text_opacity / 100.f},
+        text_color,
         font_size,
         false,
         font,
@@ -231,9 +333,11 @@ void HTLayoutBase::render_workspace_label(WORKSPACEID workspace_id, PHLWORKSPACE
             std::clamp((int)HTConfig::value<Config::INTEGER>("labels:background_opacity"), 0, 100);
         if (background_opacity > 0) {
             const std::string background_color = HTConfig::value<Config::STRING>("labels:background_color");
-            CHyprColor color = background_color.empty()
-                ? (CHyprColor {HTConfig::value<Config::INTEGER>("bg_color")}.stripA())
-                : CHyprColor {parse_hex_color(background_color)}.stripA();
+            CHyprColor color = use_matugen && palette.valid
+                ? palette.secondary
+                : (background_color.empty()
+                       ? CHyprColor {HTConfig::value<Config::INTEGER>("bg_color")}.stripA()
+                       : CHyprColor {parse_hex_color(background_color)}.stripA());
             color = color.modifyA(color.a * (background_opacity / 100.f));
 
             CRectPassElement::SRectData rect;

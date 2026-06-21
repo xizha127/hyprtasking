@@ -161,7 +161,7 @@ hl.config({
         background = false,
         background_color = "",
         background_opacity = 100,
-        mutagen = true,
+        matugen = true,
       },
 
       -- for other mouse buttons see <linux/input-event-codes.h>
@@ -243,7 +243,7 @@ plugin {
             background = false
             background_color = ""
             background_opacity = 100
-            mutagen = true
+            matugen = true
         }
 
         drag_button = 0x110 # left mouse button
@@ -345,7 +345,7 @@ All options should are prefixed with `plugin:hyprtasking:`.
 | `labels:background` | `bool` | Whether to draw a rounded background behind the label | `false` |
 | `labels:background_color` | `string` | Hex color for the label background | `""` |
 | `labels:background_opacity` | `int` | Background opacity from `0` to `100` | `100` |
-| `labels:mutagen` | `bool` | When enabled, use the workspace name when available instead of the numeric id | `true` |
+| `labels:matugen` | `bool` | When enabled, labels use the matugen primary and secondary colors from your Hyprland colors file | `true` |
 | `gestures:enabled` | `int` | Whether or not to enable gestures | `true` |
 | `gestures:move_fingers` | `int` | The number of fingers to use for the "move" gesture | `3` |
 | `gestures:move_distance` | `float` | How large of a swipe on the touchpad corresponds to the width of a workspace | `300.f` |
