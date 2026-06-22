@@ -186,31 +186,35 @@ void HTLayoutBase::render() {
 }
 
 void HTLayoutBase::render_workspace_label(WORKSPACEID workspace_id, PHLWORKSPACE workspace, const CBox& box) {
-    if (!HTConfig::value<Config::BOOL>("labels:display_label"))
-        return;
-    if (box.w < 1.f || box.h < 1.f)
-        return;
-
-    const bool use_name = HTConfig::value<Config::BOOL>("labels:mutagen");
-    std::string text = std::to_string(workspace_id);
-    if (use_name && workspace != nullptr && !workspace->m_name.empty())
-        text = workspace->m_name;
-
     const PHLMONITOR monitor = get_monitor();
     if (monitor == nullptr)
         return;
 
-    const int font_size = HTConfig::value<Config::INTEGER>("labels:font_size");
-    const int text_opacity =
-        std::clamp((int)HTConfig::value<Config::INTEGER>("labels:text_opacity"), 0, 100);
+    const std::string monitor_name = monitor->m_name;
+
+    if (!HTConfig::value_for_monitor<Config::BOOL>(monitor_name, "labels:display_label"))
+        return;
+    if (box.w < 1.f || box.h < 1.f)
+        return;
+
+    const bool use_name = HTConfig::value_for_monitor<Config::BOOL>(monitor_name, "labels:mutagen");
+    std::string text = std::to_string(workspace_id);
+    if (use_name && workspace != nullptr && !workspace->m_name.empty())
+        text = workspace->m_name;
+
+    const int font_size = HTConfig::value_for_monitor<Config::INTEGER>(monitor_name, "labels:font_size");
+    const int text_opacity = std::clamp(
+        (int)HTConfig::value_for_monitor<Config::INTEGER>(monitor_name, "labels:text_opacity"),
+        0,
+        100
+    );
     if (text_opacity <= 0)
         return;
 
-    const std::string font = HTConfig::value<Config::STRING>("labels:font");
-    const std::string text_color = HTConfig::value<Config::STRING>("labels:text_color");
-    CHyprColor color = text_color.empty()
-        ? CHyprColor {1.f, 1.f, 1.f, 1.f}
-        : CHyprColor {parse_hex_color(text_color)}.stripA();
+    const std::string font = HTConfig::value_for_monitor<Config::STRING>(monitor_name, "labels:font");
+    const std::string text_color = HTConfig::value_for_monitor<Config::STRING>(monitor_name, "labels:text_color");
+    CHyprColor color = text_color.empty() ? CHyprColor {1.f, 1.f, 1.f, 1.f}
+                                           : CHyprColor {parse_hex_color(text_color)}.stripA();
     color = color.modifyA(color.a * (text_opacity / 100.f));
 
     const float pad = 8.f * monitor->m_scale;
@@ -221,15 +225,20 @@ void HTLayoutBase::render_workspace_label(WORKSPACEID workspace_id, PHLWORKSPACE
 
     const Vector2D content_size = tex->m_size;
     const Vector2D label_size = content_size + Vector2D {pad * 2.f, pad * 2.f};
-    const LabelPos pos = parse_label_pos(HTConfig::value<Config::STRING>("labels:position"));
+    const LabelPos pos = parse_label_pos(HTConfig::value_for_monitor<Config::STRING>(monitor_name, "labels:position"));
     const Vector2D origin = label_origin(box, pos, label_size, pad);
     const CBox label_box = {box.pos() + origin, label_size};
 
-    if (HTConfig::value<Config::BOOL>("labels:background")) {
+    if (HTConfig::value_for_monitor<Config::BOOL>(monitor_name, "labels:background")) {
         const int background_opacity =
-            std::clamp((int)HTConfig::value<Config::INTEGER>("labels:background_opacity"), 0, 100);
+            std::clamp(
+                (int)HTConfig::value_for_monitor<Config::INTEGER>(monitor_name, "labels:background_opacity"),
+                0,
+                100
+            );
         if (background_opacity > 0) {
-            const std::string background_color = HTConfig::value<Config::STRING>("labels:background_color");
+            const std::string background_color =
+                HTConfig::value_for_monitor<Config::STRING>(monitor_name, "labels:background_color");
             CHyprColor color = background_color.empty()
                 ? (CHyprColor {HTConfig::value<Config::INTEGER>("bg_color")}.stripA())
                 : CHyprColor {parse_hex_color(background_color)}.stripA();

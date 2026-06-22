@@ -368,3 +368,22 @@ All options should are prefixed with `plugin:hyprtasking:`.
 
 <sup>FYI, "ARG" does not refer to any minecraft ARG. Why would you even ask that?
 Eww</sup>
+
+Per-monitor label overrides are supported with:
+
+```lua
+labels = {
+  monitors = {
+    ["eDP-1"] = {
+      display_label = true,
+      position = "top_right",
+      text_color = "#ffffff",
+    },
+    ["DP-1"] = {
+      display_label = false,
+    },
+  },
+}
+```
+
+Monitor overrides fall back to the global `labels` values if a key is omitted.
