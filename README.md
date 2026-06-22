@@ -431,3 +431,50 @@ inside `grid = { ... }` or other unrelated subtables.
 
 Monitor overrides fall back to the global plugin config when a key is omitted.
 Supported override keys mirror the normal plugin config shape, for example `layout`, `gap_size`, `bg_color`, `drag_button`, nested `labels = { ... }`, nested `gestures = { ... }`, nested `grid = { ... }`, and nested `linear = { ... }`.
+
+**NEW: Optional workspace-name generator config**
+
+Repo now includes optional Hyprland Lua examples under:
+
+- `.config/hypr/hyprland.lua`
+- `.config/hypr/custom/general.lua`
+- `.config/hypr/custom/workspace-generator.lua`
+- `.config/hypr/custom/hyprtasking.lua`
+
+The important template is `.config/hypr/custom/general.lua`. It wires monitor
+rules and workspace rules through `workspace-generator.lua`, so each monitor can
+get its own sequential workspace name family:
+
+- ultrawide: `A1`, `A2`, `A3`, ...
+- aux: `B1`, `B2`, `B3`, ...
+- laptop: `C1`, `C2`, `C3`, ...
+
+That generator is optional, but it pairs well with Hyprtasking labels because
+workspace labels now render the real workspace name, not only numeric IDs.
+
+The naming template lives in:
+
+```lua
+format = {
+  single = "{prefix}{label}{set_label}{suffix}",
+  repeated = "{prefix}{label}{set_label}{set_id}{suffix}",
+}
+```
+
+With per-monitor groups like:
+
+```lua
+{
+  output = "desc:Microstep MSI MD342CQP 0000000000001",
+  workspaces = {
+    label = "A",
+    sets = {
+      { count = 9 },
+    },
+  },
+}
+```
+
+That produces sequential names per monitor. Swap `label = "A"` for `B` / `C`
+to get `B1..Bn` and `C1..Cn`. You can also change the format to produce forms
+such as `A-1`, `A:Chat:1`, or `M-A1`.
