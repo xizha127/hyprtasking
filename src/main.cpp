@@ -33,8 +33,7 @@
 using namespace Config::Actions;
 using namespace Config::Values;
 
-namespace {
-constexpr auto LUA_MONITORS_CONFIG_KEY = "plugin.hyprtasking.monitors";
+static constexpr auto LUA_MONITORS_CONFIG_KEY = "plugin.hyprtasking.monitors";
 
 class CLuaMonitorOverridesValue : public Config::Lua::ILuaConfigValue {
   public:
@@ -53,7 +52,6 @@ class CLuaMonitorOverridesValue : public Config::Lua::ILuaConfigValue {
         if (!lua_istable(s, -1))
             return {.errorCode = Config::Lua::PARSE_ERROR_BAD_TYPE, .message = "monitors expects a table"};
 
-        Log::logger->log(LOG, "[Hyprtasking] parsing monitor overrides");
         m_data.clear();
 
         const int root = lua_absindex(s, -1);
@@ -285,35 +283,7 @@ class CLuaMonitorOverridesValue : public Config::Lua::ILuaConfigValue {
     OverridesMap m_data;
 };
 
-static int lua_set_monitors(lua_State* L) {
-    if (!lua_istable(L, 1))
-        return luaL_error(L, "%s", "hyprtasking.set_monitors expects a table");
-
-    HTConfig::clear_monitor_overrides();
-
-    const int root = lua_absindex(L, 1);
-    const auto root_len = lua_rawlen(L, root);
-    for (lua_Integer i = 1; i <= static_cast<lua_Integer>(root_len); ++i) {
-        lua_geti(L, root, i);
-        if (!lua_istable(L, -1)) {
-            lua_pop(L, 1);
-            continue;
-        }
-
-        auto parsed = CLuaMonitorOverridesValue::parse_monitor_entry(L, lua_absindex(L, -1), "");
-        if (!parsed.first.empty())
-            HTConfig::set_monitor_override(parsed.first, std::move(parsed.second));
-
-        lua_pop(L, 1);
-    }
-
-    if (ht_manager != nullptr)
-        ht_manager->refresh_all_grid_caches();
-
-    return 0;
-}
-
-void reload_monitor_overrides_from_config() {
+static void reload_monitor_overrides_from_config() {
     HTConfig::clear_monitor_overrides();
 
     auto* lua_mgr = dynamic_cast<Config::Lua::CConfigManager*>(Config::mgr().get());
@@ -331,7 +301,6 @@ void reload_monitor_overrides_from_config() {
     for (const auto& [selector, override] : monitors->parsed()) {
         HTConfig::set_monitor_override(selector, override);
     }
-}
 }
 
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -845,7 +814,6 @@ static void add_dispatchers() {
     add_dispatcher(setlayer);
     add_dispatcher(setlayerwindow);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprtasking", "is_active", lua_is_active);
-    HyprlandAPI::addLuaFunction(PHANDLE, "hyprtasking", "set_monitors", lua_set_monitors);
 }
 
 static void register_monitor_overrides_value() {

@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -46,6 +47,15 @@ inline void set_monitor_override(std::string selector, SMonitorConfigOverride ov
     monitor_overrides[std::move(selector)] = std::move(override);
 }
 
+inline std::string_view trim_selector(std::string_view value) {
+    const auto begin = value.find_first_not_of(" \t\n\r");
+    if (begin == std::string_view::npos)
+        return {};
+
+    const auto end = value.find_last_not_of(" \t\n\r");
+    return value.substr(begin, end - begin + 1);
+}
+
 inline const SMonitorConfigOverride* monitor_override(
     const std::string& name,
     const std::string& description = ""
@@ -57,9 +67,17 @@ inline const SMonitorConfigOverride* monitor_override(
     if (description.empty())
         return nullptr;
 
-    const auto by_desc = monitor_overrides.find("desc:" + description);
-    if (by_desc != monitor_overrides.end())
-        return &by_desc->second;
+    for (const auto& [selector, override] : monitor_overrides) {
+        if (!selector.starts_with("desc:"))
+            continue;
+
+        const auto desc_selector = trim_selector(std::string_view(selector).substr(5));
+        if (desc_selector.empty())
+            continue;
+
+        if (std::string_view(description).starts_with(desc_selector))
+            return &override;
+    }
 
     return nullptr;
 }

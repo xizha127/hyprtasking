@@ -199,7 +199,9 @@ void HTLayoutBase::render_workspace_label(WORKSPACEID workspace_id, PHLWORKSPACE
     if (box.w < 1.f || box.h < 1.f)
         return;
 
-    const std::string text = std::to_string(workspace_id);
+    const std::string text =
+        workspace != nullptr && !workspace->m_name.empty() ? workspace->m_name
+                                                           : std::to_string(workspace_id);
 
     const int font_size = HTConfig::value_for_monitor<Config::INTEGER>(
         monitor,

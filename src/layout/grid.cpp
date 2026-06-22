@@ -32,14 +32,12 @@
 
 using Hyprutils::Utils::CScopeGuard;
 
-namespace {
-int grid_rows_for_monitor(const PHLMONITOR monitor) {
+static int grid_rows_for_monitor(const PHLMONITOR monitor) {
     return HTConfig::value_for_monitor<Config::INTEGER>(monitor, "grid:rows");
 }
 
-int grid_cols_for_monitor(const PHLMONITOR monitor) {
+static int grid_cols_for_monitor(const PHLMONITOR monitor) {
     return HTConfig::value_for_monitor<Config::INTEGER>(monitor, "grid:cols");
-}
 }
 
 HTLayoutGrid::HTLayoutGrid(VIEWID new_view_id) : HTLayoutBase(new_view_id) {
