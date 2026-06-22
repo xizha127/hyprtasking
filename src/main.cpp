@@ -41,30 +41,34 @@ class CLuaMonitorOverridesValue : public Config::Lua::ILuaConfigValue {
     using OverridesMap = std::unordered_map<std::string, HTConfig::SMonitorConfigOverride>;
 
     Config::Lua::SParseError parse(lua_State* s) override {
-        if (!lua_istable(s, 1))
+        struct SLuaStackGuard {
+            lua_State* state;
+            int top;
+
+            ~SLuaStackGuard() {
+                lua_settop(state, top);
+            }
+        } stack_guard {s, lua_gettop(s)};
+
+        if (!lua_istable(s, -1))
             return {.errorCode = Config::Lua::PARSE_ERROR_BAD_TYPE, .message = "monitors expects a table"};
 
+        Log::logger->log(LOG, "[Hyprtasking] parsing monitor overrides");
         m_data.clear();
 
-        const int root = lua_absindex(s, 1);
-        lua_pushnil(s);
-        while (lua_next(s, root) != 0) {
+        const int root = lua_absindex(s, -1);
+        const auto root_len = lua_rawlen(s, root);
+        for (lua_Integer i = 1; i <= static_cast<lua_Integer>(root_len); ++i) {
+            lua_geti(s, root, i);
             if (!lua_istable(s, -1)) {
                 lua_pop(s, 1);
                 continue;
             }
 
-            std::string selector;
-            if (lua_isstring(s, -2))
-                selector = lua_tostring(s, -2);
+            auto parsed = parse_monitor_entry(s, lua_absindex(s, -1), "");
+            if (!parsed.first.empty())
+                m_data[parsed.first] = std::move(parsed.second);
 
-            auto parsed = parse_monitor_entry(s, lua_absindex(s, -1), selector);
-            if (parsed.first.empty()) {
-                lua_pop(s, 1);
-                continue;
-            }
-
-            m_data[parsed.first] = std::move(parsed.second);
             lua_pop(s, 1);
         }
 
@@ -126,51 +130,61 @@ class CLuaMonitorOverridesValue : public Config::Lua::ILuaConfigValue {
         return m_data;
     }
 
-  private:
+  public:
     static std::string make_path(const std::string& prefix, const std::string& key) {
         return prefix.empty() ? key : prefix + ":" + key;
     }
 
-    static void flatten_monitor_entry(
+    static void maybe_store_scalar_value(
+        lua_State* s,
+        int value_index,
+        const std::string& path,
+        HTConfig::SMonitorConfigOverride& override
+    ) {
+        if (lua_isnil(s, value_index))
+            return;
+
+        if (lua_isboolean(s, value_index))
+            override.values[path] = (bool)lua_toboolean(s, value_index);
+        else if (lua_isinteger(s, value_index))
+            override.values[path] = (Config::INTEGER)lua_tointeger(s, value_index);
+        else if (lua_isnumber(s, value_index))
+            override.values[path] = (Config::FLOAT)lua_tonumber(s, value_index);
+        else if (lua_isstring(s, value_index))
+            override.values[path] = std::string {lua_tostring(s, value_index)};
+    }
+
+    static void maybe_store_scalar_field(
         lua_State* s,
         int table_index,
-        const std::string& prefix,
-        HTConfig::SMonitorConfigOverride& override,
-        std::string& selector
+        const char* field,
+        const std::string& path,
+        HTConfig::SMonitorConfigOverride& override
     ) {
-        lua_pushnil(s);
-        while (lua_next(s, table_index) != 0) {
-            if (!lua_isstring(s, -2)) {
-                lua_pop(s, 1);
-                continue;
-            }
+        lua_getfield(s, table_index, field);
+        maybe_store_scalar_value(s, -1, path, override);
+        lua_pop(s, 1);
+    }
 
-            const std::string key = lua_tostring(s, -2);
-            if (prefix.empty() && key == "output" && lua_isstring(s, -1)) {
-                selector = lua_tostring(s, -1);
-                lua_pop(s, 1);
-                continue;
-            }
-
-            const std::string path = make_path(prefix, key);
-
-            if (lua_istable(s, -1)) {
-                flatten_monitor_entry(s, lua_absindex(s, -1), path, override, selector);
-                lua_pop(s, 1);
-                continue;
-            }
-
-            if (lua_isboolean(s, -1))
-                override.values[path] = (bool)lua_toboolean(s, -1);
-            else if (lua_isinteger(s, -1))
-                override.values[path] = (Config::INTEGER)lua_tointeger(s, -1);
-            else if (lua_isnumber(s, -1))
-                override.values[path] = (Config::FLOAT)lua_tonumber(s, -1);
-            else if (lua_isstring(s, -1))
-                override.values[path] = std::string {lua_tostring(s, -1)};
-
+    static void parse_named_subtable_fields(
+        lua_State* s,
+        int table_index,
+        const char* table_name,
+        const std::string& prefix,
+        std::initializer_list<const char*> fields,
+        HTConfig::SMonitorConfigOverride& override
+    ) {
+        lua_getfield(s, table_index, table_name);
+        if (!lua_istable(s, -1)) {
             lua_pop(s, 1);
+            return;
         }
+
+        const int subtable_index = lua_absindex(s, -1);
+        for (const char* field : fields)
+            maybe_store_scalar_field(s, subtable_index, field, make_path(prefix, field), override);
+
+        lua_pop(s, 1);
     }
 
     static std::pair<std::string, HTConfig::SMonitorConfigOverride> parse_monitor_entry(
@@ -180,12 +194,124 @@ class CLuaMonitorOverridesValue : public Config::Lua::ILuaConfigValue {
     ) {
         HTConfig::SMonitorConfigOverride override;
         std::string selector = fallback_selector;
-        flatten_monitor_entry(s, table_index, "", override, selector);
+
+        lua_getfield(s, table_index, "output");
+        if (lua_isstring(s, -1))
+            selector = lua_tostring(s, -1);
+        lua_pop(s, 1);
+
+        maybe_store_scalar_field(s, table_index, "layout", "layout", override);
+        maybe_store_scalar_field(s, table_index, "gap_size", "gap_size", override);
+        maybe_store_scalar_field(s, table_index, "bg_color", "bg_color", override);
+        maybe_store_scalar_field(s, table_index, "border_size", "border_size", override);
+        maybe_store_scalar_field(s, table_index, "exit_on_hovered", "exit_on_hovered", override);
+        maybe_store_scalar_field(s, table_index, "warp_on_move_window", "warp_on_move_window", override);
+        maybe_store_scalar_field(
+            s,
+            table_index,
+            "close_overview_on_reload",
+            "close_overview_on_reload",
+            override
+        );
+        maybe_store_scalar_field(s, table_index, "full_render", "full_render", override);
+        maybe_store_scalar_field(s, table_index, "drag_button", "drag_button", override);
+        maybe_store_scalar_field(s, table_index, "select_button", "select_button", override);
+
+        parse_named_subtable_fields(
+            s,
+            table_index,
+            "labels",
+            "labels",
+            {
+                "display_label",
+                "position",
+                "font",
+                "font_size",
+                "text_opacity",
+                "text_color",
+                "background",
+                "background_color",
+                "background_opacity",
+            },
+            override
+        );
+        parse_named_subtable_fields(
+            s,
+            table_index,
+            "gestures",
+            "gestures",
+            {
+                "enabled",
+                "move_fingers",
+                "move_distance",
+                "open_fingers",
+                "open_distance",
+                "open_positive",
+            },
+            override
+        );
+        parse_named_subtable_fields(
+            s,
+            table_index,
+            "grid",
+            "grid",
+            {
+                "rows",
+                "cols",
+                "layers",
+                "loop_layers",
+                "loop",
+                "gaps_use_aspect_ratio",
+            },
+            override
+        );
+        parse_named_subtable_fields(
+            s,
+            table_index,
+            "linear",
+            "linear",
+            {
+                "top",
+                "height",
+                "scroll_speed",
+                "blur",
+            },
+            override
+        );
+
         return {selector, override};
     }
 
     OverridesMap m_data;
 };
+
+static int lua_set_monitors(lua_State* L) {
+    if (!lua_istable(L, 1))
+        return luaL_error(L, "%s", "hyprtasking.set_monitors expects a table");
+
+    HTConfig::clear_monitor_overrides();
+
+    const int root = lua_absindex(L, 1);
+    const auto root_len = lua_rawlen(L, root);
+    for (lua_Integer i = 1; i <= static_cast<lua_Integer>(root_len); ++i) {
+        lua_geti(L, root, i);
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            continue;
+        }
+
+        auto parsed = CLuaMonitorOverridesValue::parse_monitor_entry(L, lua_absindex(L, -1), "");
+        if (!parsed.first.empty())
+            HTConfig::set_monitor_override(parsed.first, std::move(parsed.second));
+
+        lua_pop(L, 1);
+    }
+
+    if (ht_manager != nullptr)
+        ht_manager->refresh_all_grid_caches();
+
+    return 0;
+}
 
 void reload_monitor_overrides_from_config() {
     HTConfig::clear_monitor_overrides();
@@ -719,6 +845,7 @@ static void add_dispatchers() {
     add_dispatcher(setlayer);
     add_dispatcher(setlayerwindow);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprtasking", "is_active", lua_is_active);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprtasking", "set_monitors", lua_set_monitors);
 }
 
 static void register_monitor_overrides_value() {
