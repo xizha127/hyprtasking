@@ -162,7 +162,6 @@ hl.config({
         background = false,
         background_color = "",
         background_opacity = 100,
-        mutagen = true,
       },
 
       -- for other mouse buttons see <linux/input-event-codes.h>
@@ -192,7 +191,32 @@ hl.config({
         height = 400,
         scroll_speed = 1.0,
         blur = false,
-      }
+      },
+
+      monitors = {
+        {
+          output = "eDP-1",
+          labels = {
+            display_label = true,
+            position = "top_right",
+            text_color = "#ffffff",
+          },
+          grid = {
+            rows = 3,
+            cols = 3,
+          },
+        },
+        {
+          output = "DP-1",
+          labels = {
+            display_label = false,
+          },
+          grid = {
+            rows = 2,
+            cols = 2,
+          },
+        },
+      },
     }
   },
 })
@@ -245,8 +269,7 @@ plugin {
             background = false
             background_color = ""
             background_opacity = 100
-            mutagen = true
-        }
+        },
 
         drag_button = 0x110 # left mouse button
         select_button = 0x111 # right mouse button
@@ -348,7 +371,7 @@ All options should are prefixed with `plugin:hyprtasking:`.
 | `labels:background` | `bool` | Whether to draw a rounded background behind the label | `false` |
 | `labels:background_color` | `string` | Hex color for the label background | `""` |
 | `labels:background_opacity` | `int` | Background opacity from `0` to `100` | `100` |
-| `labels:mutagen` | `bool` | When enabled, use the workspace name when available instead of the numeric id | `true` |
+| `monitors` | `lua table` | Lua-only list of per-monitor overrides. Each entry needs `output = "<name or desc:...>"`; omitted keys fall back to the global plugin config. | `{}` |
 | `gestures:enabled` | `int` | Whether or not to enable gestures | `true` |
 | `gestures:move_fingers` | `int` | The number of fingers to use for the "move" gesture | `3` |
 | `gestures:move_distance` | `float` | How large of a swipe on the touchpad corresponds to the width of a workspace | `300.f` |
@@ -369,21 +392,28 @@ All options should are prefixed with `plugin:hyprtasking:`.
 <sup>FYI, "ARG" does not refer to any minecraft ARG. Why would you even ask that?
 Eww</sup>
 
-Per-monitor label overrides are supported with:
+Per-monitor label overrides are configured with the nested `monitors` table in Lua config:
 
 ```lua
-labels = {
-  monitors = {
-    ["eDP-1"] = {
-      display_label = true,
-      position = "top_right",
-      text_color = "#ffffff",
-    },
-    ["DP-1"] = {
-      display_label = false,
+hl.config({
+  plugin = {
+    hyprtasking = {
+      monitors = {
+        {
+          output = "eDP-1",
+          labels = { display_label = true, position = "top_right", text_color = "#ffffff" },
+          grid = { rows = 3, cols = 3 },
+        },
+        {
+          output = "DP-1",
+          labels = { display_label = false },
+          grid = { rows = 2, cols = 2 },
+        },
+      },
     },
   },
-}
+})
 ```
 
-Monitor overrides fall back to the global `labels` values if a key is omitted.
+Monitor overrides fall back to the global plugin config when a key is omitted.
+Supported override keys mirror the normal plugin config shape, for example `layout`, `gap_size`, `bg_color`, `drag_button`, nested `labels = { ... }`, nested `gestures = { ... }`, nested `grid = { ... }`, and nested `linear = { ... }`.

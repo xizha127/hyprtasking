@@ -16,6 +16,7 @@
 #include <hyprland/src/plugins/PluginSystem.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/event/EventBus.hpp>
+#include <hyprland/src/config/lua/ConfigManager.hpp>
 #include <hyprland/src/config/values/ConfigValues.hpp>
 #include <hyprlang.hpp>
 #include <hyprutils/math/Box.hpp>
@@ -31,6 +32,181 @@
 
 using namespace Config::Actions;
 using namespace Config::Values;
+
+namespace {
+constexpr auto LUA_MONITORS_CONFIG_KEY = "plugin.hyprtasking.monitors";
+
+class CLuaMonitorOverridesValue : public Config::Lua::ILuaConfigValue {
+  public:
+    using OverridesMap = std::unordered_map<std::string, HTConfig::SMonitorConfigOverride>;
+
+    Config::Lua::SParseError parse(lua_State* s) override {
+        if (!lua_istable(s, 1))
+            return {.errorCode = Config::Lua::PARSE_ERROR_BAD_TYPE, .message = "monitors expects a table"};
+
+        m_data.clear();
+
+        const int root = lua_absindex(s, 1);
+        lua_pushnil(s);
+        while (lua_next(s, root) != 0) {
+            if (!lua_istable(s, -1)) {
+                lua_pop(s, 1);
+                continue;
+            }
+
+            std::string selector;
+            if (lua_isstring(s, -2))
+                selector = lua_tostring(s, -2);
+
+            auto parsed = parse_monitor_entry(s, lua_absindex(s, -1), selector);
+            if (parsed.first.empty()) {
+                lua_pop(s, 1);
+                continue;
+            }
+
+            m_data[parsed.first] = std::move(parsed.second);
+            lua_pop(s, 1);
+        }
+
+        m_bSetByUser = true;
+        HTConfig::monitor_overrides = m_data;
+        return {};
+    }
+
+    const std::type_info* underlying() override {
+        return &typeid(OverridesMap);
+    }
+
+    void const* data() override {
+        return &m_data;
+    }
+
+    std::string toString() override {
+        return "monitors";
+    }
+
+    void push(lua_State* s) override {
+        lua_newtable(s);
+        int index = 1;
+        for (const auto& [selector, override] : m_data) {
+            lua_pushinteger(s, index++);
+            lua_newtable(s);
+
+            lua_pushstring(s, "output");
+            lua_pushstring(s, selector.c_str());
+            lua_settable(s, -3);
+
+            for (const auto& [key, value] : override.values) {
+                lua_pushstring(s, key.c_str());
+                std::visit([&](const auto& raw) {
+                    using ValueType = std::decay_t<decltype(raw)>;
+                    if constexpr (std::is_same_v<ValueType, std::string>)
+                        lua_pushstring(s, raw.c_str());
+                    else if constexpr (std::is_same_v<ValueType, Config::BOOL>)
+                        lua_pushboolean(s, raw);
+                    else if constexpr (std::is_same_v<ValueType, Config::INTEGER>)
+                        lua_pushinteger(s, raw);
+                    else
+                        lua_pushnumber(s, raw);
+                }, value);
+                lua_settable(s, -3);
+            }
+
+            lua_settable(s, -3);
+        }
+    }
+
+    void reset() override {
+        m_data.clear();
+        m_bSetByUser = false;
+        HTConfig::clear_monitor_overrides();
+    }
+
+    const auto& parsed() const {
+        return m_data;
+    }
+
+  private:
+    static std::string make_path(const std::string& prefix, const std::string& key) {
+        return prefix.empty() ? key : prefix + ":" + key;
+    }
+
+    static void flatten_monitor_entry(
+        lua_State* s,
+        int table_index,
+        const std::string& prefix,
+        HTConfig::SMonitorConfigOverride& override,
+        std::string& selector
+    ) {
+        lua_pushnil(s);
+        while (lua_next(s, table_index) != 0) {
+            if (!lua_isstring(s, -2)) {
+                lua_pop(s, 1);
+                continue;
+            }
+
+            const std::string key = lua_tostring(s, -2);
+            if (prefix.empty() && key == "output" && lua_isstring(s, -1)) {
+                selector = lua_tostring(s, -1);
+                lua_pop(s, 1);
+                continue;
+            }
+
+            const std::string path = make_path(prefix, key);
+
+            if (lua_istable(s, -1)) {
+                flatten_monitor_entry(s, lua_absindex(s, -1), path, override, selector);
+                lua_pop(s, 1);
+                continue;
+            }
+
+            if (lua_isboolean(s, -1))
+                override.values[path] = (bool)lua_toboolean(s, -1);
+            else if (lua_isinteger(s, -1))
+                override.values[path] = (Config::INTEGER)lua_tointeger(s, -1);
+            else if (lua_isnumber(s, -1))
+                override.values[path] = (Config::FLOAT)lua_tonumber(s, -1);
+            else if (lua_isstring(s, -1))
+                override.values[path] = std::string {lua_tostring(s, -1)};
+
+            lua_pop(s, 1);
+        }
+    }
+
+    static std::pair<std::string, HTConfig::SMonitorConfigOverride> parse_monitor_entry(
+        lua_State* s,
+        int table_index,
+        const std::string& fallback_selector
+    ) {
+        HTConfig::SMonitorConfigOverride override;
+        std::string selector = fallback_selector;
+        flatten_monitor_entry(s, table_index, "", override, selector);
+        return {selector, override};
+    }
+
+    OverridesMap m_data;
+};
+
+void reload_monitor_overrides_from_config() {
+    HTConfig::clear_monitor_overrides();
+
+    auto* lua_mgr = dynamic_cast<Config::Lua::CConfigManager*>(Config::mgr().get());
+    if (lua_mgr == nullptr)
+        return;
+
+    const auto it = lua_mgr->m_configValues.find(LUA_MONITORS_CONFIG_KEY);
+    if (it == lua_mgr->m_configValues.end())
+        return;
+
+    auto* monitors = dynamic_cast<class CLuaMonitorOverridesValue*>(it->second.get());
+    if (monitors == nullptr)
+        return;
+
+    for (const auto& [selector, override] : monitors->parsed()) {
+        HTConfig::set_monitor_override(selector, override);
+    }
+}
+}
 
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
@@ -133,8 +309,11 @@ static SDispatchResult change_layer(std::string arg, bool move_window) {
     if (cursor_view->layout->layout_name() != "grid")
         return {.success = false, .error = "layers are only supported in grid layout"};
 
-    const int LAYERS = HTConfig::value<Config::INTEGER>("grid:layers");
-    const int LOOP_LAYERS = HTConfig::value<Config::INTEGER>("grid:loop_layers");
+    const PHLMONITOR monitor = cursor_view->get_monitor();
+    if (monitor == nullptr)
+        return {.success = false, .error = "monitor is null"};
+    const int LAYERS = HTConfig::value_for_monitor<Config::INTEGER>(monitor, "grid:layers");
+    const int LOOP_LAYERS = HTConfig::value_for_monitor<Config::INTEGER>(monitor, "grid:loop_layers");
     const int original_layer = cursor_view->layout->layer;
 
     int resulting_layer = original_layer;
@@ -150,9 +329,6 @@ static SDispatchResult change_layer(std::string arg, bool move_window) {
         resulting_layer = ((resulting_layer % LAYERS) + LAYERS) % LAYERS;
     }
 
-    const PHLMONITOR monitor = cursor_view->get_monitor();
-    if (monitor == nullptr)
-        return {.success = false, .error = "monitor is null"};
     const PHLWORKSPACE active_workspace = monitor->m_activeWorkspace;
     if (active_workspace == nullptr)
         return {.success = false, .error = "active_workspace is null"};
@@ -318,8 +494,9 @@ static void on_mouse_button(IPointer::SButtonEvent e, Event::SCallbackInfo& info
 
     const bool pressed = e.state == WL_POINTER_BUTTON_STATE_PRESSED;
 
-    const unsigned int drag_button = HTConfig::value<Config::INTEGER>("drag_button");
-    const unsigned int select_button = HTConfig::value<Config::INTEGER>("select_button");
+    const PHLMONITOR monitor = cursor_view->get_monitor();
+    const unsigned int drag_button = HTConfig::value_for_monitor<Config::INTEGER>(monitor, "drag_button");
+    const unsigned int select_button = HTConfig::value_for_monitor<Config::INTEGER>(monitor, "select_button");
 
     if (pressed && e.button == drag_button) {
         info.cancelled = ht_manager->start_window_drag();
@@ -404,12 +581,15 @@ static void on_config_reloaded() {
     if (ht_manager == nullptr)
         return;
 
+    reload_monitor_overrides_from_config();
+
     // re-init scale and offset for inactive views, change layout if changed
     for (PHTVIEW& view : ht_manager->views) {
         if (view == nullptr)
             continue;
-        const Config::STRING new_layout = HTConfig::value<Config::STRING>("layout");
-        if (HTConfig::value<Config::INTEGER>("close_overview_on_reload")
+        const PHLMONITOR monitor = view->get_monitor();
+        const Config::STRING new_layout = HTConfig::value_for_monitor<Config::STRING>(monitor, "layout");
+        if (HTConfig::value_for_monitor<Config::INTEGER>(monitor, "close_overview_on_reload")
             || view->layout->layout_name() != new_layout) {
             Log::logger->log(LOG, "[Hyprtasking] Closing overview on config reload");
             view->hide(false);
@@ -538,7 +718,15 @@ static void add_dispatchers() {
     add_dispatcher(killhovered);
     add_dispatcher(setlayer);
     add_dispatcher(setlayerwindow);
-    HyprlandAPI::addLuaFunction(PHANDLE, "hyprtasking", "is_active", lua_is_active); \
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprtasking", "is_active", lua_is_active);
+}
+
+static void register_monitor_overrides_value() {
+    auto* lua_mgr = dynamic_cast<Config::Lua::CConfigManager*>(Config::mgr().get());
+    if (lua_mgr == nullptr)
+        return;
+
+    lua_mgr->m_configValues[LUA_MONITORS_CONFIG_KEY] = makeUnique<CLuaMonitorOverridesValue>();
 }
 
 #define addConfigValue(T, config, descr, value) do { \
@@ -550,6 +738,7 @@ static void add_dispatchers() {
 } while (0)
 
 static void init_config() {
+    HTConfig::clear_monitor_overrides();
     addConfigValue(CStringValue, "layout", "layout", "grid");
 
     // general
@@ -591,7 +780,9 @@ static void init_config() {
     addConfigValue(CBoolValue, "labels:background", "label background", 0);
     addConfigValue(CStringValue, "labels:background_color", "label background color", "");
     addConfigValue(CIntValue, "labels:background_opacity", "label background opacity", 100);
-    addConfigValue(CBoolValue, "labels:mutagen", "label uses workspace name when available", 1);
+
+    addConfigValue(CStringValue, "monitors", "per-monitor label overrides", "");
+    register_monitor_overrides_value();
 
     //linear specific
     addConfigValue(CIntValue, "linear:blur", "blur", 1);
@@ -620,6 +811,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     add_dispatchers();
     register_callbacks();
     init_functions();
+    reload_monitor_overrides_from_config();
     register_monitors();
 
     Log::logger->log(LOG, "[Hyprtasking] Plugin initialized");
