@@ -436,14 +436,15 @@ Supported override keys mirror the normal plugin config shape, for example `layo
 
 Repo now includes optional Hyprland Lua examples under:
 
-- `.config/hypr/hyprland.lua`
-- `.config/hypr/custom/general.lua`
-- `.config/hypr/custom/workspace-generator.lua`
-- `.config/hypr/custom/hyprtasking.lua`
+* [`.config/hypr/hyprland.lua`](.config/hypr/hyprland.lua)
+* [`.config/hypr/custom/general.lua`](.config/hypr/custom/general.lua)
+* [`.config/hypr/custom/workspace-generator.lua`](.config/hypr/custom/workspace-generator.lua)
+* [`.config/hypr/custom/hyprtasking.lua`](.config/hypr/custom/hyprtasking.lua)
 
-The important template is `.config/hypr/custom/general.lua`. It wires monitor
-rules and workspace rules through `workspace-generator.lua`, so each monitor can
+The important template is [`.config/hypr/custom/general.lua`](.config/hypr/custom/general.lua). It wires monitor
+rules and workspace rules through [`workspace-generator.lua`](.config/hypr/custom/workspace-generator.lua), so each monitor can
 get its own sequential workspace name family:
+
 
 - ultrawide: `A1`, `A2`, `A3`, ...
 - aux: `B1`, `B2`, `B3`, ...
