@@ -19,7 +19,7 @@ add_project_arguments(
   ],
   language: 'cpp')
 
-globber = run_command('find', '.', '-name', '*.cpp', check: true)
+globber = run_command('find', '.', '-path', './build', '-prune', '-o', '-name', '*.cpp', '-print', check: true)
 src = globber.stdout().strip().split('\n')
 
 incdir = []
