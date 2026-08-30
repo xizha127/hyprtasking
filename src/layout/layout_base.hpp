@@ -21,6 +21,11 @@ class HTLayoutBase {
     // Same as monitor_id of the parent view
     VIEWID view_id;
 
+    // Monitor blur-FB state saved for the duration of an overview render;
+    // see render() / post_render().
+    bool saved_blur_fb_dirty = false;
+    bool saved_blur_fb_should_render = false;
+
   public:
     using CallbackFun = Hyprutils::Animation::CBaseAnimatedVariable::CallbackFun;
 
