@@ -15,6 +15,8 @@
 #include <hyprland/src/render/pass/TexPassElement.hpp>
 #undef private
 
+#include <hyprland/src/output/Monitor.hpp>
+
 #include "../config.hpp"
 #include "../globals.hpp"
 #include "../pass/pass_element.hpp"
@@ -81,6 +83,33 @@ void HTLayoutBase::build_overview_layout(HTViewStage stage) {
 }
 
 void HTLayoutBase::render() {
+    // Keep the overview out of the monitor's precomputed background-blur cache.
+    //
+    // Hyprland queues the precompute-blur pass from inside renderWorkspace
+    // (`if (preBlurQueued(pMonitor)) m_renderPass.add(CPreBlurElement)`), and
+    // preBlurForCurrentMonitor() blurs whatever the main framebuffer holds at that
+    // point. render_workspace_at_box() calls the original renderWorkspace once per
+    // tile, so left alone the cache ends up holding a blurred snapshot of the tiled
+    // grid -- which every surface using decoration:blur:xray (or new_optimizations)
+    // then samples, long after the overview is gone.
+    //
+    // Suppressing the queue for the duration of the overview render leaves the cache
+    // holding the real desktop, so there is nothing to repair on close. If the cache
+    // was already due for a refresh, the flag is restored in post_render() and
+    // Hyprland recomputes it on an ordinary frame, through its normal preRender()
+    // path -- forcing the recompute ourselves instead risks hitting
+    // blurMainFramebuffer()'s "null fb texture (introspection off?!)" path, which
+    // clears the cache to black for a frame.
+    //
+    // The overview's own blur is unaffected: hook_blur_optimizations() already forces
+    // the live blur path while tiles are being rendered scaled.
+    if (const PHLMONITOR monitor = get_monitor()) {
+        saved_blur_fb_dirty = monitor->m_blurFBDirty;
+        saved_blur_fb_should_render = monitor->m_blurFBShouldRender;
+        monitor->m_blurFBDirty = false;
+        monitor->m_blurFBShouldRender = false;
+    }
+
     CClearPassElement::SClearData data;
     data.color = CHyprColor {0};
     g_pHyprRenderer->m_renderPass.add(makeUnique<CClearPassElement>(data));
@@ -194,6 +223,13 @@ void HTLayoutBase::post_render() {
     render_jump_labels();
     g_pHyprRenderer->m_renderPass.add(makeUnique<HTPassElement>());
     // g_pHyprOpenGL->setDamage(CRegion {CBox {0, 0, INT32_MAX, INT32_MAX}});
+
+    // Hand the blur-FB state back exactly as render() found it, so a refresh that
+    // fell due while the overview was open still happens once it closes.
+    if (const PHLMONITOR monitor = get_monitor()) {
+        monitor->m_blurFBDirty = saved_blur_fb_dirty;
+        monitor->m_blurFBShouldRender = saved_blur_fb_should_render;
+    }
 }
 
 PHLMONITOR HTLayoutBase::get_monitor() {
