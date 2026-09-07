@@ -114,7 +114,8 @@ hyprctl plugin load "$(realpath libhyprtasking.so)"
     - Open the overlay, then use **right click** to switch to a workspace
     - Use the directional dispatchers `hyprtasking:move` to switch to a workspace
     - With `jump.enabled` enabled, press the label shown over a workspace to jump to it
-      (`1`-`9`, `0`, then `a`-`z`)
+      (`1`-`9`, `0`, then `a`-`z`). Set `jump.show_workspace_names` to display
+      workspace names such as `A1` instead of the keyboard jump labels.
 - Window management:
     - **Left click** to drag and drop windows around
 
@@ -164,6 +165,7 @@ hl.config({
 
       jump = {
         enabled = false,
+        show_workspace_names = false,
         label_color = 0xffffffff,
         label_background = 0x000000cc,
         label_size = 32,
